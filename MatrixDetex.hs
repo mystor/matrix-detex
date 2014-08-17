@@ -1,37 +1,39 @@
-import           Control.Monad
 import           Data.List
-import           Data.Text                          hiding (intercalate, map)
-import           System.Environment
+import           Data.Text                     hiding (intercalate, map)
 import           System.Hclip
 import           Text.ParserCombinators.Parsec
-import           Text.ParserCombinators.Parsec.Prim
 
-body :: Parser String
-body = many1 $ noneOf "&\\"
-
-row :: Parser [String]
-row = sepBy body (char '&')
-
-matrix :: Parser [[String]]
-matrix = sepBy row (try (string "\\\\"))
-
-full_matrix :: Parser [[String]]
-full_matrix = do
-  string "\\begin{bmatrix}"
-  mat <- matrix
-  string "\\end{bmatrix}"
-  return mat
-
-doParse :: String -> Either ParseError [[String]]
-doParse input = parse full_matrix "matrix" input
-
+-- | Strip, with Strings instead of Text for arguments
 trim :: String -> String
 trim = unpack . strip . pack
 
+-- | A single cell of a matrix
+body :: Parser String
+body = many1 $ noneOf "&\\"
+
+-- | A single row of the matrix
+row :: Parser [String]
+row = sepBy body (char '&')
+
+-- | A matrix parser (excluding wrappers)
+matrix :: Parser [[String]]
+matrix = sepBy row (try (string "\\\\"))
+
+-- | A wrapped matrix parser
+wrappedMatrix :: Parser [[String]]
+wrappedMatrix = do
+    skipMany space -- Skip any leading whitespace
+    optional (try $ string "\\begin{bmatrix}")
+    mat <- matrix
+    optional (try $ string "\\end{bmatrix}")
+    return mat
+
+-- | Trim every element of the matrix
 cleanUp :: [[String]] -> [[String]]
 cleanUp (x : xs) = map trim x : cleanUp xs
 cleanUp []       = []
 
+-- | Generate a wolfram array from an array of arrays of strings
 wolfram :: [[String]] -> String
 wolfram x = "{" ++ wolfram' ++ "}"
     where
@@ -39,26 +41,21 @@ wolfram x = "{" ++ wolfram' ++ "}"
         row y = "{" ++ row' y ++ "}"
         row' y = intercalate ", " y
 
-transformLeft :: (a -> b) -> Either a c -> Either b c
-transformLeft fn e = either lhs rhs e
-    where
-        lhs a = Left $ fn a
-        rhs c = Right c
-
 main :: IO ()
 main = do
      string <- getClipboard
-     putStrLn "Got input:"
-     putStrLn $ string ++ "\n"
+
+     putStrLn $ "Got input: \n" ++ string ++ "\n"
+
      let result = do
-                result <- transformLeft show $ doParse string
+                result <- parse wrappedMatrix "matrix" string
                 return $ wolfram $ cleanUp result
 
      case result of
           Left e -> do
-               putStrLn "Failure! Reason:"
-               putStrLn e
+               putStrLn "Failed to parse input:"
+               putStrLn $ show e
           Right s -> do
-                void $ setClipboard $ s
-                putStrLn "Success! Copied result to clipboard:"
-                putStrLn s
+               setClipboard s
+               putStrLn "Success! Copied result to clipboard:"
+               putStrLn s
