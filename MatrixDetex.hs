@@ -22,7 +22,6 @@ matrix = sepBy row (try (string "\\\\"))
 -- | A wrapped matrix parser
 wrappedMatrix :: Parser [[String]]
 wrappedMatrix = do
-    skipMany space -- Skip any leading whitespace
     optional (try $ string "\\begin{bmatrix}")
     mat <- matrix
     optional (try $ string "\\end{bmatrix}")
@@ -43,19 +42,14 @@ wolfram x = "{" ++ wolfram' ++ "}"
 
 main :: IO ()
 main = do
-     string <- getClipboard
+     input <- getClipboard
+     putStrLn $ "Got input: \n" ++ input ++ "\n"
 
-     putStrLn $ "Got input: \n" ++ string ++ "\n"
-
-     let result = do
-                result <- parse wrappedMatrix "matrix" string
-                return $ wolfram $ cleanUp result
+     let result = parse wrappedMatrix "matrix" $ trim input
 
      case result of
-          Left e -> do
-               putStrLn "Failed to parse input:"
-               putStrLn $ show e
-          Right s -> do
+          Left e -> putStrLn $ "Failed to parse input:\n" ++ show e
+          Right mat -> do
+               let s = wolfram $ cleanUp mat
                setClipboard s
-               putStrLn "Success! Copied result to clipboard:"
-               putStrLn s
+               putStrLn $ "Success! Copied result to clipboard:\n" ++ s
